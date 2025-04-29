@@ -203,7 +203,7 @@ test |>
   print()
 ```
 
-## Validation 
+## Validation
 
 ```{r}
 workflow_names <- c("logit", "rf", "xgboost")
