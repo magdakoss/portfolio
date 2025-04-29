@@ -1,0 +1,45 @@
+# Regular Expressions in R
+
+This file will involve data from transcripts of the American television show "The Office" which aired on NBC from 2005 to 2013. All transcripts are available in the R package `schrute`.
+
+```{r}
+library(ggplot2)
+library(ggwordcloud)
+library(schrute)
+library(tidyverse)
+library(tidytext)
+
+data(theoffice)
+```
+
+## A word cloud of the 30 most-used words across the entire series, excluding stop words
+```{r}
+data("stop_words")
+
+theoffice |>
+  select(season, episode, text) |>
+  unnest_tokens(word, text) |>
+  summarize(term_frequency = n(),
+            .by = word) |>
+  arrange(desc(term_frequency)) |>
+  anti_join(stop_words, by = join_by(word)) |>
+  slice_head(n = 30) |>
+  ggplot() +
+  geom_text_wordcloud_area(aes(label = word, 
+                               size = term_frequency)) +
+  scale_size_area(max_size = 40) 
+
+```
+
+# What word was used the most?
+
+```{r}
+theoffice |>
+  select(season, episode, text) |>
+  unnest_tokens(word, text) |>
+  summarize(term_frequency = n(),
+            .by = c(word)) |>
+  arrange(desc(term_frequency)) |>
+  anti_join(stop_words, by = join_by(word)) |>
+  slice_head(n=1)
+```
