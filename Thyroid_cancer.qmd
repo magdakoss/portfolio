@@ -1,6 +1,7 @@
 ---
 title: "Thyroid Cancer Recurrence"
 format: html
+author: Magdalena Kossuth
 editor: visual
 ---
 
