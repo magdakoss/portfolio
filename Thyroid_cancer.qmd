@@ -35,10 +35,11 @@ This dataset focuses on thyroid cancer recurrence after Radioactive Iodine (RAI)
 
 -   **Recurred** : Whether cancer recurred (Yes or No).
 
-```{r, echo=FALSE}
+```{r, echo=FALSE, , include=FALSE}
 library(glue)
 library(tidymodels)
 library(tidyverse)
+library(vip)
 
 theme_set(theme_classic())
 
@@ -52,7 +53,7 @@ str(thyroid_data)
 
 What is the average age of a patient with thyroid cancer?
 
-```{r}
+```{r, include=FALSE}
 mean_age <- thyroid_data |> 
   summarize(mean_age = mean(Age)) |>
   unlist() 
@@ -70,7 +71,7 @@ ggplot(thyroid_data, aes(x = Age)) +
            color = "red")
 ```
 
-What are the proportion of female vs male patients?
+The histogram shows the age distribution of the patients.
 
 ```{r}
 gender_counts <- thyroid_data |>
@@ -101,6 +102,8 @@ ggplot(recurred_graph1, aes(x = Gender, y = Count, fill = Status)) +
     labels = c("Recurred", "Did Not Recur"))
 ```
 
+About 81% of patients are female and 19% are male. The bar chart reveals that male patients have a higher recurrence rate than females, suggesting gender might be an important predictor.
+
 ## Logistic regression model
 
 ```{r}
@@ -120,7 +123,7 @@ ggplot(train, aes(x = Age)) +
 vfold <- vfold_cv(train, strata = Recurred, v = 10)
 ```
 
-The data is split into 80% for training and 20% for testing. Since recurrence happens in about 40% of cases, the split is stratified on the Recurrence feature to ensure the test data contains enough cases of "yes" recurrence. The random split looks balanced between the test and training set when checked on the Age feature.
+The data is split into 80% for training and 20% for testing. Since recurrence happens in about 40% of cases, the split is stratified on the Recurrence feature to preserve class balance. The random split looks balanced between the test and training set when checked on the Age feature.
 
 ```{r}
 recipe_recurred <- recipe(Recurred ~., data = thyroid_data) |>
@@ -136,26 +139,32 @@ logistic_wf <- workflow() |>
   add_recipe(recipe_recurred)
 
 logistic_fit <- fit(logistic_wf, data = train)
-tidy(logistic_fit) |>
-  filter(p.value <= 0.05)
 
+tidy(logistic_fit) |>
+  filter(p.value <= 0.05) |> print()
+
+exp(c(2.4, -6.9, -4.55))
 ```
 
-Using the logistic regression model to predict the recurrence of thyroid cancer based on all of the features available in the data we obtain 73 correct predictions, 3 false negatives, and 0 false positives.
+Male gender and treatment response levels are statistically significant predictors of thyroid cancer recurrence. Male patients have approximately 11 times higher odds of recurrence compared to female patients, holding all other variables constant. Additionally, patients with excellent and intermediate responses to treatment have a less than 1% chance of cancer recurrence.
 
 ## Random Forest Model
 
 ```{r}
 rf_model <- rand_forest() |>
   set_mode("classification") |>
-  set_engine("ranger")
+  set_engine("ranger", 
+            importance = "impurity")
 
 rf_workflow <- workflow() |>
   add_recipe(recipe_recurred) |>
   add_model(rf_model)
 
 rf_fit <- fit(rf_workflow, data = train)
+vip(rf_fit)
 ```
+
+This plot shows which features most strongly influence predictions in the random forest model.
 
 ## XGBoost Model
 
@@ -169,7 +178,7 @@ xgb_workflow <- workflow() |>
   add_recipe(recipe_recurred)
 
 xgb_fit <- fit(xgb_workflow, data = train)
-
+vip(xgb_fit)
 ```
 
 ## Validation
@@ -179,7 +188,7 @@ The validation process employs 10-fold cross-validation to assess model performa
 ```{r}
 workflow_names <- c("logit", "rf", "xgboost")
 workflow_variables <- list(logistic_wf, rf_workflow, xgb_workflow)
-class_metric <- metric_set(f_meas, brier_class, roc_auc)
+class_metric <- metric_set(f_meas, brier_class, roc_auc, mcc)
 
 workflows_vfold <- tibble(workflow_name = workflow_names,
                     workflow_object = workflow_variables) |>
@@ -232,7 +241,9 @@ The models are evaluated using the following metrics:
 
 2.  Brier Score: Measures the accuracy of probabilistic predictions. Lower values are better.
 
-3.  ROC AUC: Evaluates models ability to distinguish between classes. Higest value indicate better distinction.
+3.  Matthews Correlation Coefficient: Useful when classes are imbalanced.
+
+4.  ROC AUC: Evaluates models ability to distinguish between classes. Higest value indicate better distinction.
 
 ```{r}
 workflows_vfold |>
@@ -247,3 +258,17 @@ workflows_vfold |>
              scales = "free_x") +
   theme(legend.position = "none")
 ```
+
+This plot helps identify which model performed best on each metric.
+
+### **Conclusion**
+
+This analysis explored the prediction of thyroid cancer recurrence following Radioactive Iodine (RAI) therapy using logistic regression, random forest, and XGBoost. After evaluating model performance with cross-validation and multiple metrics (F1 score, ROC AUC, Brier score, and Matthews Correlation Coefficient), all three models demonstrated reasonable classification ability, with differences in performance depending on the metric used.
+
+Logistic regression revealed that male gender and treatment response were statistically significant predictors of recurrence. Specifically, male patients had approximately 11 times higher odds of experiencing cancer recurrence compared to female patients, when controlling for other variables. Patients who showed an Excellent or Indeterminate response to treatment had substantially lower odds of recurrence, less than 1% of the odds compared to the reference group.
+
+Among the models, random forest showed the strongest predictive performance. However, model selection should be informed by the context in which predictions are used. For example, in clinical settings, minimizing false negatives may be more critical than overall accuracy.
+
+Limitations of this study include a moderate sample size (n = 383) and some class imbalance between recurrence outcomes. Future work could benefit from external validation using a separate dataset, incorporating additional clinical variables, and potentially using ensemble methods or calibration techniques to refine probability estimates.
+
+In summary, predictive modeling can provide valuable support in identifying patients at higher risk of recurrence, aiding clinicians in tailoring follow-up strategies and treatment plans more effectively.
