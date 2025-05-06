@@ -34,7 +34,6 @@ glimpse(housing_data)
 How have the average housing prices changed over the years?
 
 ```{r}
-#| warning: false
 #| echo: false
 #| label: houses prices bar graph
  
@@ -57,25 +56,16 @@ The bar graph exhibits a parabolic pattern.
 
 At the beginning of 2019, when COVID-19 reached the US, housing sales and new construction initially halted. However, since then the housing market in CT became more and more competitive. Is this increase in house prices significant?
 
+To answer this question let's conduct a one-way ANOVA test.
+
+The null hypothesis: the means do not differ.
+
+Alternative hypothesis: the means are different from one another.
+
 ```{r}
-#| label: covid
+#| label: anova
 #| eval: false
-covid_housing <- housing_data |>
-  filter(listyear %in% c(2018, 2019, 2020, 2021, 2022)) |>
-  filter(propertytype == "Single Family" | residentialtype == "Single Family") |>
-  glimpse()
 
-covid_housing |>
-  mutate(residential_equals_property = residentialtype == propertytype) |>
-  filter(residential_equals_property == "FALSE")
-
-ggplot(covid_housing, aes(x = as.factor(listyear), y = mean(saleamount, .by = listyear))) +
-  geom_col()
-
-ggplot(covid_housing, aes(x = daterecorded, y = saleamount)) +
-  geom_jitter() +
-  geom_smooth(method = "lm") +
-  lims(y = c(50000,5000000))
-  scale_y_continuous(labels = label_number(scale = 1e-3, suffix = "K")) 
-
+anova <- aov(average_price ~ year, data = housing_yearly)
+summary(anova)
 ```
