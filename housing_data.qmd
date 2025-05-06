@@ -17,17 +17,7 @@ library(visdat)
 theme_set(theme_bw())
 ```
 
-The CT Office of Policy and Management maintains a listing of all real estate sales with a sales price of \$2,000 or greater that occur between October 1 and September 30 of each year. For each sale record, the file includes: town, property address, date of sale, property type (residential, apartment, commercial, industrial or vacant land), sales price, and property assessment.
-
-Annual real estate sales are reported by grand list year (October 1 through September 30 each year). For instance, sales from 2018 GL are from 10/01/2018 through 9/30/2019.
-
-Since the data before the year 2006 is missing property types it will not be included in this analysis. Additionally, any property which sale price was greatly outside of the assessed value will not be included. Only the properties that lie within 0.1 to 1.5 sale ratio (ratio of the assessed value to the sale price) are included.
-
--   If a property's sale ratio is less than 0.1 (10%), it means the assessed value is very low compared to the sale price.
-
--   If a property's sale ratio is greater than 1.5 (150%), it means the assessed value is much higher than the sale price.
-
-<https://data.ct.gov/Housing-and-Development/Real-Estate-Sales-2001-2022-GL/5mzw-sjtu/about_data>
+From the Open CT Data Website: Monthly sale price of single-family homes in Connecticut, 2001 through the present. Data updated monthly by the Connecticut Housing Finance Authority and tracked in the following dashboard: <https://www.chfa.org/about-us/ct-monthly-housing-market-dashboard/>.
 
 ```{r}
 #| warning: false
@@ -35,38 +25,37 @@ Since the data before the year 2006 is missing property types it will not be inc
 #| cache: true
 #| label: load data
 
-housing_data <- read_csv("https://data.ct.gov/resource/5mzw-sjtu.csv?$limit=1097629") |>
-  select(-c("serialnumber", "nonusecode", "opm_remarks", "remarks", "geo_coordinates")) |>
-  filter(salesratio > 0.1 & salesratio < 1.5)
+housing_data <- read_csv("https://data.ct.gov/resource/fv7n-cnqr.csv?$query=SELECT%20%60date%60%2C%20%60median_sale_price%60%2C%20%60average_sale_price%60") 
 
-#vis_dat(housing_data |>
-         # filter(listyear == 2020))
+glimpse(housing_data)
 ```
 
 \
-How have the average housing prices changed over the years? The average is calculated based on the listing year for residential properties, such as: condominiums, single-family, two-family, three-family and four-family homes.
+How have the average housing prices changed over the years?
 
 ```{r}
 #| warning: false
 #| echo: false
 #| label: houses prices bar graph
  
-#glimpse(housing_data)
+housing_yearly <- housing_data |>
+  mutate(year = year(date)) |>
+  group_by(year) |>
+  summarise(
+    median_price = median(median_sale_price, na.rm = TRUE),
+    average_price = mean(average_sale_price, na.rm = TRUE))
 
-housing_data_by_year <- housing_data |>
-  filter(propertytype %in% c("Residential", "Condo", "Two Family", "Single Family", "Three Family", "Four Family")) |>
-  summarize(mean_price = mean(saleamount), .by = listyear)
-
-ggplot(housing_data_by_year, aes(x = as.factor(listyear), y = mean_price)) +
+ggplot(housing_yearly, aes(x = as.factor(year), y = average_price)) +
   geom_col(color = "darkblue", fill = "cornflowerblue") +
   labs(title = "Average Home Prices in CT from Years 2006 to 2022",
        y = "Average Price", x = "Year") +
   scale_y_continuous(labels = label_number(scale = 1e-3, suffix = "K")) +
   theme(axis.text.x = element_text(angle = 90, hjust = 1))
-  
 ```
 
-At the beginning of 2019, when COVID-19 reached the US, housing sales and new construction initially halted. However, since then the housing market in CT became more and more competetive. Is this increase in house prices significant? In this analysis only single family homes are included.
+The bar graph exhibits a parabolic pattern.
+
+At the beginning of 2019, when COVID-19 reached the US, housing sales and new construction initially halted. However, since then the housing market in CT became more and more competitive. Is this increase in house prices significant?
 
 ```{r}
 #| label: covid
@@ -89,40 +78,4 @@ ggplot(covid_housing, aes(x = daterecorded, y = saleamount)) +
   lims(y = c(50000,5000000))
   scale_y_continuous(labels = label_number(scale = 1e-3, suffix = "K")) 
 
-```
-
-The most expensive property sold each year
-
-```{r}
-#| label: max houses
-max_houses <- housing_data |> 
-  filter(propertytype %in% c("Residential", "Condo", "Two Family", "Single Family", "Three Family", "Four Family")) |>
-  slice_max(n = 1, saleamount, by = listyear) |>
-  arrange(listyear) |>
-  distinct(listyear, .keep_all = TRUE) 
-
-max_houses |>
-  select(listyear, town, address) |>
-  print(n = 17)
-
-```
-
-Which house was sold for the most amount of money across the CT data?
-
-```{r}
-#| label: max HOUSE
-max_house <- max_houses |> 
-  slice_max(n = 1, saleamount) 
-
-max_house$address <- str_to_title(max_house$address) %>%
-  sub("0499.*", "0499", .)
-
-print(paste("The most expensive house of all time in CT was sold in ", max_house$town," on ", max_house$daterecorded, ". It was sold for ", format(max_house$saleamount, big.mark = ","), ". The address of the property is ", max_house$address, ".", sep = ""))
-```
-
-The property on zillow website: <https://www.zillow.com/homedetails/499-Indian-Field-Rd-Greenwich-CT-06830/57311593_zpid/>
-
-```{r}
-#| echo: false
-knitr::include_graphics("https://photos.zillowstatic.com/fp/37c11f1af7cc141addb6144db81f36cb-cc_ft_1536.jpg")
 ```
