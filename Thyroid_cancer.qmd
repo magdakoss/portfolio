@@ -36,6 +36,10 @@ This dataset focuses on thyroid cancer recurrence after Radioactive Iodine (RAI)
 -   **Recurred** : Whether cancer recurred (Yes or No).
 
 ```{r, echo=FALSE, , include=FALSE}
+knitr::opts_chunk$set(
+  warning = FALSE,
+  message = FALSE
+)
 library(glue)
 library(tidymodels)
 library(tidyverse)
@@ -53,7 +57,7 @@ str(thyroid_data)
 
 What is the average age of a patient with thyroid cancer?
 
-```{r, include=FALSE}
+```{r}
 mean_age <- thyroid_data |> 
   summarize(mean_age = mean(Age)) |>
   unlist() 
@@ -180,6 +184,8 @@ xgb_workflow <- workflow() |>
 xgb_fit <- fit(xgb_workflow, data = train)
 vip(xgb_fit)
 ```
+
+This plot shows which features most strongly influence predictions in the xgboost model.
 
 ## Validation
 
