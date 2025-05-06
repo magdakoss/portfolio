@@ -4,7 +4,7 @@ format: html
 editor: visual
 ---
 
-This dataset focuses on thyroid cancer recurrence after Radioactive Iodine (RAI) therapy. It contains 383 patient records with 13 key attributes. This data will be used to build a valuable predictive model for cancer recurrence.
+This dataset focuses on thyroid cancer recurrence after Radioactive Iodine (RAI) therapy. It contains 383 patient records with 13 key attributes. This data will be used to build predictive models for future cancer recurrence using logistic regression, random forest, and XGBoost.
 
 \
 **Column Descriptions:**
@@ -39,6 +39,7 @@ This dataset focuses on thyroid cancer recurrence after Radioactive Iodine (RAI)
 library(glue)
 library(tidymodels)
 library(tidyverse)
+
 theme_set(theme_classic())
 
 setwd("C:/Users/Magdalena/portfolio")
@@ -58,15 +59,6 @@ mean_age <- thyroid_data |>
 
 min(thyroid_data$Age)
 max(thyroid_data$Age)
-
-ggplot(thyroid_data, aes(x = Age)) +
-  geom_histogram(bins = 20, fill = "lightblue", color= "black") +
-  scale_x_continuous(breaks = seq(10, 90, by = 10)) +
-  labs(title = "Age Histogram", x = "Age", y = "Number of Patients") +
-  geom_vline(xintercept = mean_age, color = "red", linetype = "dashed") +
-  annotate("text", x = 50, y = 45,
-           label = glue("Average Age {round(mean_age, 2)}"), 
-           color = "red")
 
 ggplot(thyroid_data, aes(x = Age)) +
   geom_histogram(bins = 20, fill = "lightblue", color= "black") +
@@ -125,18 +117,17 @@ ggplot(train, aes(x = Age)) +
   geom_boxplot(aes(y = "Train")) +
   geom_boxplot(data = test, aes(y = "Test"))
 
-vfold <- vfold_cv(train, strata = Recurred)
-
+vfold <- vfold_cv(train, strata = Recurred, v = 10)
 ```
 
-The data is split into 80% for training and 20% for testing. Since recurrence happens in about 40% of cases, the split is stratified on the Recurrence feature to ensure the test data contains enough cases of recurrence. The random split looks balanced between the test and training set when checked on the Age feature.
+The data is split into 80% for training and 20% for testing. Since recurrence happens in about 40% of cases, the split is stratified on the Recurrence feature to ensure the test data contains enough cases of "yes" recurrence. The random split looks balanced between the test and training set when checked on the Age feature.
 
 ```{r}
 recipe_recurred <- recipe(Recurred ~., data = thyroid_data) |>
   step_normalize(Age) |>
   step_dummy(all_nominal_predictors())
   
-logistic_model <- logistic_reg() |>
+logistic_model <- logistic_reg(penalty = 0.1, mixture = 1) |>
   set_engine("glm") |>
   set_mode("classification") 
 
@@ -148,13 +139,6 @@ logistic_fit <- fit(logistic_wf, data = train)
 tidy(logistic_fit) |>
   filter(p.value <= 0.05)
 
-logistic_predictions <- predict(logistic_fit, new_data = test)
-logistic_matrix <- test |>
-  select(Recurred) |>
-  cbind(logistic_predictions) |>
-  count(Recurred, .pred_class) |>
-  rename(Predicted = .pred_class) |>
-  print()
 ```
 
 Using the logistic regression model to predict the recurrence of thyroid cancer based on all of the features available in the data we obtain 73 correct predictions, 3 false negatives, and 0 false positives.
@@ -171,14 +155,6 @@ rf_workflow <- workflow() |>
   add_model(rf_model)
 
 rf_fit <- fit(rf_workflow, data = train)
-rf_predictions <- predict(rf_fit, new_data = test)
-
-test |>
-  select(Recurred) |>
-  cbind(rf_predictions) |>
-  count(Recurred, .pred_class) |>
-  rename(Predicted = .pred_class) |>
-  print()
 ```
 
 ## XGBoost Model
@@ -193,25 +169,20 @@ xgb_workflow <- workflow() |>
   add_recipe(recipe_recurred)
 
 xgb_fit <- fit(xgb_workflow, data = train)
-xgb_predictions <- predict(xgb_fit, new_data = test)
 
-test |>
-  select(Recurred) |>
-  cbind(xgb_predictions) |>
-  count(Recurred, .pred_class) |>
-  rename(Predicted = .pred_class) |>
-  print()
 ```
 
 ## Validation
 
+The validation process employs 10-fold cross-validation to assess model performances. This approach splits the training data into 10 subsets, trains the model on 9 fold, and evaluated on the last remaining fold. The process is repeated 10 times, ensuring that each data point is used for both training and validation. Cross training helps mitigate overfitting.
+
 ```{r}
 workflow_names <- c("logit", "rf", "xgboost")
-workflow_variable <- list(logistic_wf, rf_workflow, xgb_workflow)
-class_metric <- metric_set(accuracy, brier_class, roc_auc)
+workflow_variables <- list(logistic_wf, rf_workflow, xgb_workflow)
+class_metric <- metric_set(f_meas, brier_class, roc_auc)
 
-workflows <- tibble("workflow_name" = workflow_names,
-                    "workflow_object" = workflow_variable) |>
+workflows_vfold <- tibble(workflow_name = workflow_names,
+                    workflow_object = workflow_variables) |>
   rowwise()|>
   mutate(fits = list(fit_resamples(workflow_object,
                                    vfold,
@@ -219,8 +190,60 @@ workflows <- tibble("workflow_name" = workflow_names,
   mutate(metrics = list(collect_metrics(fits)))
 ```
 
-## Model Assessment
+## Predictions
 
 ```{r}
+predictions <- tibble(workflow_name = workflow_names,
+                    workflow_fit = list(logistic_fit, rf_fit, xgb_fit)) |>
+  rowwise() |>
+  mutate(pred_class = list(predict(workflow_fit,
+                                   test,
+                                   type = "class"))) |>
+  mutate(pred_prob = list(predict(workflow_fit,
+                                  test,
+                                  type = "prob")))
+predictions <- predictions |>
+  mutate(predictions = list(bind_cols(pred_class, pred_prob))) |>
+  select(-c(pred_class, pred_prob))
 
+predictions  <- predictions |>
+  select(workflow_name, predictions) |>
+  unnest(cols = c(predictions)) |>
+  cbind(Recurred = factor(test$Recurred))
+
+for (model in workflow_names){
+    cat("\nConfusion Matrix for", model, ":\n")
+    predictions |>
+    filter(workflow_name == model) |>
+    conf_mat(truth = Recurred, estimate = .pred_class) |>
+    print()
+}
+
+predictions |>
+  group_by(workflow_name)  |> 
+  mcc(truth = Recurred, estimate =.pred_class)
+```
+
+## Model Assessment
+
+The models are evaluated using the following metrics:
+
+1.  F1 Score: Balances precision and recall. Better for evaluating imbalanced datasets compared to accuracy. A high score suggests effective prediction.
+
+2.  Brier Score: Measures the accuracy of probabilistic predictions. Lower values are better.
+
+3.  ROC AUC: Evaluates models ability to distinguish between classes. Higest value indicate better distinction.
+
+```{r}
+workflows_vfold |>
+  select(workflow_name,
+           metrics) |>
+  unnest(metrics) |>
+  ggplot(aes(y = workflow_name,
+             x = mean)) +
+  geom_col(aes(fill = workflow_name)) +
+  facet_wrap(~.metric,
+             nrow = 3,
+             scales = "free_x") +
+  theme(legend.position = "none")
 ```
